@@ -10,7 +10,6 @@ from transformers import (
 import torch
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, classification_report
-import evaluate
 from collections import defaultdict
 import logging
 import sys
@@ -30,23 +29,50 @@ logger = logging.getLogger(__name__)
 def format_time(seconds):
     return str(timedelta(seconds=int(seconds)))
 
-# Function to convert labels
-def map_labels(example):
+logger.info("Loading GoEmotions dataset...")
+# 1. Load and preprocess dataset
+dataset = load_dataset("go_emotions")
+logger.info(f"Dataset loaded with {len(dataset['train'])} training examples")
+
+# Define the 7 target emotions we want to keep
+target_emotions = {'anger', 'disgust', 'fear', 'joy', 'neutral', 'sadness', 'surprise'}
+
+# Function to filter examples that have at least one label in target_emotions
+def filter_by_target_emotions(example):
     labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
-    valid_labels = [label for label in labels if label in emotion_mapping]
+    return any(label in target_emotions for label in labels)
+
+logger.info("Filtering dataset to keep only examples with target emotions...")
+filtered_dataset = dataset.filter(filter_by_target_emotions)
+logger.info(f"After filtering: {len(filtered_dataset['train'])} training examples remain")
+
+# Now we can directly use the labels without mapping since we've already filtered
+j_hartmann_labels = ['anger', 'disgust', 'fear', 'joy', 'neutral', 'sadness', 'surprise']
+
+# Function to convert labels (now simpler since we only have target emotions)
+def map_labels(example):
+    # Get all labels (we know they're all in our target set)
+    labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
     
-    if not valid_labels:
-        mapped_label = 'neutral'
-    else:
-        non_neutral = [label for label in valid_labels if emotion_mapping[label] != 'neutral']
-        if non_neutral:
-            mapped_label = emotion_mapping[non_neutral[0]]
-        else:
-            mapped_label = emotion_mapping[valid_labels[0]]
+    # If multiple labels, choose the first one (or implement more sophisticated logic)
+    chosen_label = labels[0]
     
-    label_id = j_hartmann_labels.index(mapped_label)
+    label_id = j_hartmann_labels.index(chosen_label)
     
     return {'text': example['text'], 'label': label_id}
+
+logger.info("Processing labels...")
+mapped_dataset = filtered_dataset.map(map_labels, remove_columns=['labels', 'id'])
+
+# Display label distribution
+logger.info("Label distribution after filtering and mapping:")
+label_distribution = defaultdict(int)
+for example in tqdm(mapped_dataset["train"], desc="Counting labels"):
+    label_distribution[example["label"]] += 1
+
+for label_id, count in label_distribution.items():
+    percent = (count / len(mapped_dataset["train"])) * 100
+    logger.info(f"Label {j_hartmann_labels[label_id]}: {count} examples ({percent:.2f}%)")
 
 # Tokenize dataset
 def tokenize_function(examples):
