@@ -13,7 +13,6 @@ def get_classifier():
         classifier = pipeline("text-classification", model="./emotion_model", tokenizer="./emotion_model", return_all_scores=True)
     except Exception as e:
         print(f"Error loading model: {e}")
-        classifier = pipeline("text-classification", model="j-hartmann/emotion-english-distilroberta-base", return_all_scores=True)
     return classifier
 
 @app.post("/predict")
