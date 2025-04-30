@@ -153,7 +153,7 @@ function App() {
       </main>
       
       <footer className="mt-8 text-center text-gray-500 text-sm">
-        <p>Using Hugging Face emotion-english-distilroberta-base model</p>
+        <p>English text emotion analysis model</p>
       </footer>
 
       {isHistoryOpen && (
