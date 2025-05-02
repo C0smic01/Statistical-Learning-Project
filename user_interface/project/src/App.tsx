@@ -14,6 +14,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isHistoryClosing, setIsHistoryClosing] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadHistory();
@@ -38,6 +40,7 @@ function App() {
         }
       }));
 
+      console.log('Loaded history entries:', historyEntries);
       setHistory(historyEntries);
     } catch (err) {
       console.error('Error loading history:', err);
@@ -84,7 +87,40 @@ function App() {
   const handleHistoryEntrySelect = (entry: HistoryEntry) => {
     setText(entry.input);
     setResult(entry.result);
-    setIsHistoryOpen(false);
+    closeHistoryPanel();
+  };
+
+  const handleDeleteHistoryEntry = async (id: string) => {
+    try {
+      console.log('Attempting to delete history entry with ID:', id);
+      setDeletingIds(prev => new Set([...prev, id]));
+      
+      const { error } = await supabase
+        .from('history')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      console.log('Successfully deleted history entry with ID:', id);
+      setHistory(prev => prev.filter(entry => entry.id !== id));
+    } catch (err) {
+      console.error('Error deleting history entry:', err);
+    } finally {
+      setDeletingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+    }
+  };
+
+  const closeHistoryPanel = () => {
+    setIsHistoryClosing(true);
+    setTimeout(() => {
+      setIsHistoryOpen(false);
+      setIsHistoryClosing(false);
+    }, 300); // Match this duration to your animation duration
   };
 
   return (
@@ -153,14 +189,17 @@ function App() {
       </main>
       
       <footer className="mt-8 text-center text-gray-500 text-sm">
-        <p>English text emotion analysis model</p>
+        <p>Using Hugging Face emotion-english-distilroberta-base model</p>
       </footer>
 
-      {isHistoryOpen && (
+      {(isHistoryOpen || isHistoryClosing) && (
         <History
           history={history}
-          onClose={() => setIsHistoryOpen(false)}
+          onClose={closeHistoryPanel}
           onSelectEntry={handleHistoryEntrySelect}
+          onDeleteEntry={handleDeleteHistoryEntry}
+          deletingIds={deletingIds}
+          isClosing={isHistoryClosing}
         />
       )}
     </div>
