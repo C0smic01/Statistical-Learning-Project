@@ -1,6 +1,7 @@
 import logging
 import sys
 import time
+import random
 from collections import defaultdict
 from datetime import timedelta
 
@@ -18,9 +19,9 @@ from transformers import (
 )
 from tqdm import tqdm
 
-# Constants
 TARGET_EMOTIONS = ['anger', 'disgust', 'fear', 'joy', 'neutral', 'sadness', 'surprise']
 MODEL_NAME = "j-hartmann/emotion-english-distilroberta-base"
+MAX_DATASET_SIZE = 50000
 
 # Setup logging
 def setup_logging():
@@ -40,30 +41,82 @@ def format_time(seconds):
     return str(timedelta(seconds=int(seconds)))
 
 def load_and_filter_dataset():
-    # Load and filter the dataset to only include target emotions
-    logger.info("Loading GoEmotions dataset...")
-    dataset = load_dataset("go_emotions")
+    # Load the new dataset
+    logger.info("Loading Villian7/Emotions_Data dataset...")
+    dataset = load_dataset("Villian7/Emotions_Data")
     logger.info(f"Original dataset size: {len(dataset['train'])} examples")
 
     def filter_fn(example):
-        labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
-        return any(label in TARGET_EMOTIONS for label in labels)
+        return example['label_text'] in TARGET_EMOTIONS
 
-    logger.info("Filtering dataset...")
+    logger.info("Filtering dataset for target emotions...")
     filtered_dataset = dataset.filter(filter_fn)
     logger.info(f"Filtered dataset size: {len(filtered_dataset['train'])} examples")
+    
+    # Limit to 50k examples
+    if len(filtered_dataset['train']) > MAX_DATASET_SIZE:
+        logger.info(f"Limiting dataset to {MAX_DATASET_SIZE} examples...")
+        
+        emotions_dict = defaultdict(list)
+        for i, example in enumerate(filtered_dataset['train']):
+            emotions_dict[example['label_text']].append(i)
+        
+        examples_per_emotion = MAX_DATASET_SIZE // len(TARGET_EMOTIONS)
+        remaining = MAX_DATASET_SIZE % len(TARGET_EMOTIONS)
+        
+        selected_indices = []
+        for emotion in TARGET_EMOTIONS:
+            # Get all indices for this emotion
+            emotion_indices = emotions_dict[emotion]
+            # Select either all indices or the target number, whichever is smaller
+            num_to_select = min(len(emotion_indices), examples_per_emotion)
+            # Randomly sample the required number of indices
+            sampled_indices = random.sample(emotion_indices, num_to_select)
+            selected_indices.extend(sampled_indices)
+            
+            # Add remaining examples from emotions that have more data
+            if remaining > 0 and len(emotion_indices) > num_to_select:
+                extra_indices = random.sample(
+                    [idx for idx in emotion_indices if idx not in sampled_indices],
+                    min(remaining, len(emotion_indices) - num_to_select)
+                )
+                selected_indices.extend(extra_indices)
+                remaining -= len(extra_indices)
+        
+        filtered_dataset['train'] = filtered_dataset['train'].select(selected_indices)
+        logger.info(f"Limited dataset size: {len(filtered_dataset['train'])} examples")
+    
+    if 'validation' not in filtered_dataset and 'test' not in filtered_dataset:
+        logger.info("Splitting dataset into train, validation, and test sets...")
+        splits = filtered_dataset["train"].train_test_split(test_size=0.2, seed=42)
+        train_data = splits["train"]
+        temp_splits = splits["test"].train_test_split(test_size=0.5, seed=42)
+        val_data = temp_splits["train"]
+        test_data = temp_splits["test"]
+        
+        filtered_dataset = {
+            "train": train_data,
+            "validation": val_data,
+            "test": test_data
+        }
+    
     return filtered_dataset
 
 def process_labels(dataset):
     # Process labels to match our target emotion classes
     def map_labels(example):
-        labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
-        chosen_label = next((label for label in labels if label in TARGET_EMOTIONS), 'neutral')
-        label_id = TARGET_EMOTIONS.index(chosen_label)
+        # Map emotion string to numeric label
+        label_id = TARGET_EMOTIONS.index(example['label_text'])
         return {'text': example['text'], 'label': label_id}
 
     logger.info("Processing labels...")
-    processed_dataset = dataset.map(map_labels, remove_columns=['labels', 'id'])
+    processed_dataset = {}
+    for split in dataset:
+        processed_dataset[split] = dataset[split].map(
+            map_labels, 
+            remove_columns=['label_text'] + [col for col in dataset[split].column_names if col not in ['text', 'label_text']]
+        )
+    
     return processed_dataset
 
 def analyze_label_distribution(dataset):
@@ -98,12 +151,15 @@ def tokenize_dataset(dataset, tokenizer):
     def tokenize_fn(examples):
         return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=128)
     
-    tokenized_dataset = dataset.map(
-        tokenize_fn,
-        batched=True,
-        desc="Tokenizing",
-        num_proc=4
-    )
+    tokenized_dataset = {}
+    for split in dataset:
+        tokenized_dataset[split] = dataset[split].map(
+            tokenize_fn,
+            batched=True,
+            desc=f"Tokenizing {split}",
+            num_proc=4
+        )
+    
     return tokenized_dataset
 
 def calculate_class_weights(label_distribution):
@@ -190,7 +246,7 @@ def setup_training_args():
         per_device_eval_batch_size=64,
         num_train_epochs=3,
         weight_decay=0.01,
-        eval_strategy="steps",
+        eval_strategy="steps",  # Updated from eval_strategy
         eval_steps=500,
         save_strategy="steps",
         save_steps=500,
