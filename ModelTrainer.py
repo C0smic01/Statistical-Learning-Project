@@ -1,7 +1,6 @@
 import logging
 import sys
 import time
-import random
 from collections import defaultdict
 from datetime import timedelta
 
@@ -9,6 +8,7 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from sklearn.metrics import accuracy_score, f1_score, classification_report
+from sklearn.utils.class_weight import compute_class_weight
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -16,14 +16,13 @@ from transformers import (
     Trainer,
     TrainerCallback,
     TrainingArguments,
+    EarlyStoppingCallback
 )
 from tqdm import tqdm
 
 TARGET_EMOTIONS = ['anger', 'disgust', 'fear', 'joy', 'neutral', 'sadness', 'surprise']
-MODEL_NAME = "j-hartmann/emotion-english-distilroberta-base"
-MAX_DATASET_SIZE = 50000
+MODEL_NAME = "distilbert-base-uncased"
 
-# Setup logging
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,
@@ -41,86 +40,31 @@ def format_time(seconds):
     return str(timedelta(seconds=int(seconds)))
 
 def load_and_filter_dataset():
-    # Load the new dataset
-    logger.info("Loading Villian7/Emotions_Data dataset...")
-    dataset = load_dataset("Villian7/Emotions_Data")
+    logger.info("Loading GoEmotions dataset...")
+    dataset = load_dataset("go_emotions")
     logger.info(f"Original dataset size: {len(dataset['train'])} examples")
 
     def filter_fn(example):
-        return example['label_text'] in TARGET_EMOTIONS
+        labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
+        return any(label in TARGET_EMOTIONS for label in labels)
 
-    logger.info("Filtering dataset for target emotions...")
+    logger.info("Filtering dataset...")
     filtered_dataset = dataset.filter(filter_fn)
     logger.info(f"Filtered dataset size: {len(filtered_dataset['train'])} examples")
-    
-    # Limit to 50k examples
-    if len(filtered_dataset['train']) > MAX_DATASET_SIZE:
-        logger.info(f"Limiting dataset to {MAX_DATASET_SIZE} examples...")
-        
-        emotions_dict = defaultdict(list)
-        for i, example in enumerate(filtered_dataset['train']):
-            emotions_dict[example['label_text']].append(i)
-        
-        examples_per_emotion = MAX_DATASET_SIZE // len(TARGET_EMOTIONS)
-        remaining = MAX_DATASET_SIZE % len(TARGET_EMOTIONS)
-        
-        selected_indices = []
-        for emotion in TARGET_EMOTIONS:
-            # Get all indices for this emotion
-            emotion_indices = emotions_dict[emotion]
-            # Select either all indices or the target number, whichever is smaller
-            num_to_select = min(len(emotion_indices), examples_per_emotion)
-            # Randomly sample the required number of indices
-            sampled_indices = random.sample(emotion_indices, num_to_select)
-            selected_indices.extend(sampled_indices)
-            
-            # Add remaining examples from emotions that have more data
-            if remaining > 0 and len(emotion_indices) > num_to_select:
-                extra_indices = random.sample(
-                    [idx for idx in emotion_indices if idx not in sampled_indices],
-                    min(remaining, len(emotion_indices) - num_to_select)
-                )
-                selected_indices.extend(extra_indices)
-                remaining -= len(extra_indices)
-        
-        filtered_dataset['train'] = filtered_dataset['train'].select(selected_indices)
-        logger.info(f"Limited dataset size: {len(filtered_dataset['train'])} examples")
-    
-    if 'validation' not in filtered_dataset and 'test' not in filtered_dataset:
-        logger.info("Splitting dataset into train, validation, and test sets...")
-        splits = filtered_dataset["train"].train_test_split(test_size=0.2, seed=42)
-        train_data = splits["train"]
-        temp_splits = splits["test"].train_test_split(test_size=0.5, seed=42)
-        val_data = temp_splits["train"]
-        test_data = temp_splits["test"]
-        
-        filtered_dataset = {
-            "train": train_data,
-            "validation": val_data,
-            "test": test_data
-        }
-    
     return filtered_dataset
 
 def process_labels(dataset):
-    # Process labels to match our target emotion classes
     def map_labels(example):
-        # Map emotion string to numeric label
-        label_id = TARGET_EMOTIONS.index(example['label_text'])
+        labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
+        chosen_label = next((label for label in labels if label in TARGET_EMOTIONS), 'neutral')
+        label_id = TARGET_EMOTIONS.index(chosen_label)
         return {'text': example['text'], 'label': label_id}
 
     logger.info("Processing labels...")
-    processed_dataset = {}
-    for split in dataset:
-        processed_dataset[split] = dataset[split].map(
-            map_labels, 
-            remove_columns=['label_text'] + [col for col in dataset[split].column_names if col not in ['text', 'label_text']]
-        )
-    
+    processed_dataset = dataset.map(map_labels, remove_columns=['labels', 'id'])
     return processed_dataset
 
 def analyze_label_distribution(dataset):
-    # Analyze and log the label distribution
     logger.info("Analyzing label distribution...")
     label_distribution = defaultdict(int)
     
@@ -135,52 +79,49 @@ def analyze_label_distribution(dataset):
     return label_distribution
 
 def initialize_model_and_tokenizer():
-    # Initialize the model and tokenizer
-    logger.info("Initializing model and tokenizer...")
+    logger.info("Initializing DistilBERT model and tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(
         MODEL_NAME,
-        num_labels=len(TARGET_EMOTIONS),
-        ignore_mismatched_sizes=True
+        num_labels=len(TARGET_EMOTIONS)
     )
     return model, tokenizer
 
 def tokenize_dataset(dataset, tokenizer):
-    # Tokenize the dataset
     logger.info("Tokenizing dataset...")
     def tokenize_fn(examples):
-        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=128)
-    
-    tokenized_dataset = {}
-    for split in dataset:
-        tokenized_dataset[split] = dataset[split].map(
-            tokenize_fn,
-            batched=True,
-            desc=f"Tokenizing {split}",
-            num_proc=4
-        )
-    
+        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=64)
+
+    tokenized_dataset = dataset.map(
+        tokenize_fn,
+        batched=True,
+        desc="Tokenizing",
+        num_proc=4
+    )
     return tokenized_dataset
 
-def calculate_class_weights(label_distribution):
-    # Calculate class weights for imbalanced data
+def calculate_class_weights(dataset):
     logger.info("Calculating class weights...")
-    total = sum(label_distribution.values())
-    class_weights = [total/(len(TARGET_EMOTIONS)*count) for label_id, count in sorted(label_distribution.items())]
+    labels = [example["label"] for example in dataset["train"]]
+    class_weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.unique(labels),
+        y=labels
+    )
+    class_weights = torch.tensor(class_weights, dtype=torch.float32)
     
     logger.info("Class weights:")
     for i, weight in enumerate(class_weights):
         logger.info(f"{TARGET_EMOTIONS[i]}: {weight:.4f}")
     
-    return torch.tensor(class_weights, dtype=torch.float32)
+    return class_weights
 
 class WeightedTrainer(Trainer):
-    # Custom trainer with weighted loss
     def __init__(self, class_weights=None, **kwargs):
         super().__init__(**kwargs)
         self.class_weights = class_weights
         
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = inputs.pop("labels")
         outputs = model(**inputs)
         logits = outputs.logits
@@ -192,7 +133,6 @@ class WeightedTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 class TimingCallback(TrainerCallback):
-    # Callback to track training time
     def __init__(self):
         self.epoch_start_time = None
         self.epoch_times = []
@@ -212,7 +152,6 @@ class TimingCallback(TrainerCallback):
         logger.info(f"Estimated time remaining: {format_time(estimated_time)}")
 
 def compute_metrics(eval_pred):
-    # Compute evaluation metrics
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
     
@@ -228,7 +167,7 @@ def compute_metrics(eval_pred):
     
     results = {
         "accuracy": accuracy,
-        "f1": f1
+        "f1_weighted": f1
     }
     
     for label, metrics in report.items():
@@ -238,33 +177,33 @@ def compute_metrics(eval_pred):
     return results
 
 def setup_training_args():
-    # Setup training arguments
     return TrainingArguments(
         output_dir="./emotion_model",
-        learning_rate=2e-5,
-        per_device_train_batch_size=32,
-        per_device_eval_batch_size=64,
-        num_train_epochs=3,
+        learning_rate=3e-5,
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=32,
+        num_train_epochs=5,
         weight_decay=0.01,
-        eval_strategy="steps",  # Updated from eval_strategy
-        eval_steps=500,
+        eval_strategy="steps",
+        eval_steps=250,
         save_strategy="steps",
-        save_steps=500,
+        save_steps=250,
         save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model="f1",
+        metric_for_best_model="f1_weighted",
         greater_is_better=True,
         logging_dir='./logs',
-        logging_strategy="steps",
         logging_steps=100,
         report_to="tensorboard",
+        warmup_steps=500,
+        gradient_accumulation_steps=2,
+        fp16=True,
     )
 
 def train_model(model, tokenizer, tokenized_dataset, class_weights):
-    # Train the model
     training_args = setup_training_args()
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
-    timer_callback = TimingCallback()
+    callbacks = [TimingCallback(), EarlyStoppingCallback(early_stopping_patience=2)]
 
     trainer = WeightedTrainer(
         model=model,
@@ -274,7 +213,7 @@ def train_model(model, tokenizer, tokenized_dataset, class_weights):
         compute_metrics=compute_metrics,
         data_collator=data_collator,
         class_weights=class_weights,
-        callbacks=[timer_callback]
+        callbacks=callbacks
     )
 
     logger.info("Starting training...")
@@ -285,7 +224,6 @@ def train_model(model, tokenizer, tokenized_dataset, class_weights):
     return trainer, train_result
 
 def evaluate_model(trainer, tokenized_dataset):
-    # Evaluate the model on test set
     logger.info("Evaluating on test set...")
     test_start_time = time.time()
     test_results = trainer.evaluate(tokenized_dataset["test"])
@@ -294,7 +232,6 @@ def evaluate_model(trainer, tokenized_dataset):
     return test_results
 
 def save_model(model, tokenizer):
-    # Save the trained model
     logger.info("Saving model...")
     save_start_time = time.time()
     model.save_pretrained("./emotion_model")
@@ -310,7 +247,7 @@ def main():
     # 2. Initialize model and tokenizer
     model, tokenizer = initialize_model_and_tokenizer()
     tokenized_dataset = tokenize_dataset(processed_dataset, tokenizer)
-    class_weights = calculate_class_weights(label_distribution)
+    class_weights = calculate_class_weights(processed_dataset)  # Updated to use processed_dataset
     
     # 3. Train the model
     trainer, train_result = train_model(model, tokenizer, tokenized_dataset, class_weights)
