@@ -20,8 +20,8 @@ from transformers import (
 )
 from tqdm import tqdm
 
-TARGET_EMOTIONS = ['anger', 'disgust', 'fear', 'joy', 'neutral', 'sadness', 'surprise']
-MODEL_NAME = "distilbert-base-uncased"
+TARGET_EMOTIONS = ['anger', 'fear', 'joy', 'love', 'sadness', 'surprise']
+MODEL_NAME = "bhadresh-savani/albert-base-v2-emotion"
 
 def setup_logging():
     logging.basicConfig(
@@ -39,29 +39,16 @@ logger = setup_logging()
 def format_time(seconds):
     return str(timedelta(seconds=int(seconds)))
 
-def load_and_filter_dataset():
-    logger.info("Loading GoEmotions dataset...")
-    dataset = load_dataset("go_emotions")
-    logger.info(f"Original dataset size: {len(dataset['train'])} examples")
-
-    def filter_fn(example):
-        labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
-        return any(label in TARGET_EMOTIONS for label in labels)
-
-    logger.info("Filtering dataset...")
-    filtered_dataset = dataset.filter(filter_fn)
-    logger.info(f"Filtered dataset size: {len(filtered_dataset['train'])} examples")
-    return filtered_dataset
-
-def process_labels(dataset):
+def load_and_preprocess_dataset():
+    logger.info("Loading mteb/emotion dataset...")
+    dataset = load_dataset("mteb/emotion")
+    
     def map_labels(example):
-        labels = [dataset['train'].features['labels'].feature.names[idx] for idx in example['labels']]
-        chosen_label = next((label for label in labels if label in TARGET_EMOTIONS), 'neutral')
-        label_id = TARGET_EMOTIONS.index(chosen_label)
+        label_id = TARGET_EMOTIONS.index(example['label_text'])
         return {'text': example['text'], 'label': label_id}
-
+    
     logger.info("Processing labels...")
-    processed_dataset = dataset.map(map_labels, remove_columns=['labels', 'id'])
+    processed_dataset = dataset.map(map_labels)
     return processed_dataset
 
 def analyze_label_distribution(dataset):
@@ -79,11 +66,12 @@ def analyze_label_distribution(dataset):
     return label_distribution
 
 def initialize_model_and_tokenizer():
-    logger.info("Initializing DistilBERT model and tokenizer...")
+    logger.info(f"Initializing {MODEL_NAME} model and tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(
         MODEL_NAME,
-        num_labels=len(TARGET_EMOTIONS)
+        num_labels=len(TARGET_EMOTIONS),
+        ignore_mismatched_sizes=True
     )
     return model, tokenizer
 
@@ -121,7 +109,7 @@ class WeightedTrainer(Trainer):
         super().__init__(**kwargs)
         self.class_weights = class_weights
         
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs.pop("labels")
         outputs = model(**inputs)
         logits = outputs.logits
@@ -180,9 +168,9 @@ def setup_training_args():
     return TrainingArguments(
         output_dir="./emotion_model",
         learning_rate=3e-5,
-        per_device_train_batch_size=16,
+        per_device_train_batch_size=32,
         per_device_eval_batch_size=32,
-        num_train_epochs=5,
+        num_train_epochs=10,
         weight_decay=0.01,
         eval_strategy="steps",
         eval_steps=250,
@@ -195,9 +183,12 @@ def setup_training_args():
         logging_dir='./logs',
         logging_steps=100,
         report_to="tensorboard",
-        warmup_steps=500,
+        warmup_steps=100,
         gradient_accumulation_steps=2,
         fp16=True,
+        gradient_checkpointing=False,
+        optim="adamw_torch",
+        lr_scheduler_type="linear",
     )
 
 def train_model(model, tokenizer, tokenized_dataset, class_weights):
@@ -240,14 +231,13 @@ def save_model(model, tokenizer):
 
 def main():
     # 1. Load and preprocess data
-    raw_dataset = load_and_filter_dataset()
-    processed_dataset = process_labels(raw_dataset)
-    label_distribution = analyze_label_distribution(processed_dataset)
+    dataset = load_and_preprocess_dataset()
+    label_distribution = analyze_label_distribution(dataset)
     
     # 2. Initialize model and tokenizer
     model, tokenizer = initialize_model_and_tokenizer()
-    tokenized_dataset = tokenize_dataset(processed_dataset, tokenizer)
-    class_weights = calculate_class_weights(processed_dataset)  # Updated to use processed_dataset
+    tokenized_dataset = tokenize_dataset(dataset, tokenizer)
+    class_weights = calculate_class_weights(dataset)
     
     # 3. Train the model
     trainer, train_result = train_model(model, tokenizer, tokenized_dataset, class_weights)
