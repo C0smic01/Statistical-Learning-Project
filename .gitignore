@@ -1,2 +1,3 @@
 venv
 model.safetensors
+emotion_model/checkpoint-*

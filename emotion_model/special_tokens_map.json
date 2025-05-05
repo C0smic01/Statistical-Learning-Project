@@ -1,27 +1,27 @@
 {
   "bos_token": {
-    "content": "<s>",
+    "content": "[CLS]",
     "lstrip": false,
     "normalized": false,
     "rstrip": false,
     "single_word": false
   },
   "cls_token": {
-    "content": "<s>",
+    "content": "[CLS]",
     "lstrip": false,
     "normalized": false,
     "rstrip": false,
     "single_word": false
   },
   "eos_token": {
-    "content": "</s>",
+    "content": "[SEP]",
     "lstrip": false,
     "normalized": false,
     "rstrip": false,
     "single_word": false
   },
   "mask_token": {
-    "content": "<mask>",
+    "content": "[MASK]",
     "lstrip": true,
     "normalized": false,
     "rstrip": false,
@@ -35,7 +35,7 @@
     "single_word": false
   },
   "sep_token": {
-    "content": "</s>",
+    "content": "[SEP]",
     "lstrip": false,
     "normalized": false,
     "rstrip": false,
