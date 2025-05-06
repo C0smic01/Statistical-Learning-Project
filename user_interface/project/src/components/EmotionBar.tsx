@@ -14,9 +14,8 @@ const EmotionBar: React.FC<EmotionBarProps> = ({ emotion, score, isHighest }) =>
       sadness: 'bg-blue-400',
       anger: 'bg-red-400',
       fear: 'bg-purple-400',
-      disgust: 'bg-emerald-400',
+      love: 'bg-pink-400',
       surprise: 'bg-cyan-400',
-      neutral: 'bg-gray-400',
     };
     return colors[emotion];
   };

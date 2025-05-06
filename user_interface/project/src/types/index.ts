@@ -3,7 +3,7 @@ export interface EmotionScore {
   score: number;
 }
 
-export type EmotionType = 'joy' | 'sadness' | 'anger' | 'fear' | 'neutral' | 'disgust' | 'surprise';
+export type EmotionType = 'joy' | 'sadness' | 'anger' | 'fear' | 'love' | 'surprise';
 
 export interface ClassificationResult {
   emotions: Record<EmotionType, number>;
