@@ -17,11 +17,15 @@ app.add_middleware(
 class TextRequest(BaseModel):
     text: str
 
+classifier = None
+
 def get_classifier():
-    try:
-        classifier = pipeline("text-classification", model="./emotion_model", tokenizer="./emotion_model", return_all_scores=True)
-    except Exception as e:
-        print(f"Error loading model: {e}")
+    global classifier
+    if classifier is None:
+        try:
+            classifier = pipeline("text-classification", model="./emotion_model", tokenizer="./emotion_model", return_all_scores=True)
+        except Exception as e:
+            print(f"Error loading model: {e}")
     return classifier
 
 @app.post("/predict")
