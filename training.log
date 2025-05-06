@@ -1,43 +1,35 @@
-2025-05-05 21:11:58,551 - INFO - Loading mteb/emotion dataset...
-2025-05-05 21:12:08,118 - INFO - Processing labels...
-2025-05-05 21:12:08,131 - INFO - Analyzing label distribution...
-2025-05-05 21:12:08,571 - INFO - Label distribution:
-2025-05-05 21:12:08,571 - INFO - sadness: 4666 examples (29.16%)
-2025-05-05 21:12:08,571 - INFO - anger: 2159 examples (13.49%)
-2025-05-05 21:12:08,571 - INFO - love: 1304 examples (8.15%)
-2025-05-05 21:12:08,571 - INFO - surprise: 572 examples (3.57%)
-2025-05-05 21:12:08,571 - INFO - fear: 1937 examples (12.11%)
-2025-05-05 21:12:08,571 - INFO - joy: 5362 examples (33.51%)
-2025-05-05 21:12:08,571 - INFO - Initializing bhadresh-savani/albert-base-v2-emotion model and tokenizer...
-2025-05-05 21:12:09,782 - INFO - Tokenizing dataset...
-2025-05-05 21:12:09,833 - INFO - Calculating class weights...
-2025-05-05 21:12:10,249 - INFO - Class weights:
-2025-05-05 21:12:10,249 - INFO - anger: 1.2351
-2025-05-05 21:12:10,249 - INFO - fear: 1.3767
-2025-05-05 21:12:10,249 - INFO - joy: 0.4973
-2025-05-05 21:12:10,249 - INFO - love: 2.0450
-2025-05-05 21:12:10,249 - INFO - sadness: 0.5715
-2025-05-05 21:12:10,250 - INFO - surprise: 4.6620
-2025-05-05 21:12:10,326 - INFO - Starting training...
-2025-05-05 21:12:10,439 - INFO - Starting epoch 1/10
-2025-05-05 21:53:54,119 - INFO - Epoch 2.0 completed in 0:41:43
-2025-05-05 21:53:54,127 - INFO - Estimated time remaining: 5:33:49
-2025-05-05 21:53:54,127 - INFO - Starting epoch 2.0/10
-2025-05-05 22:36:55,344 - INFO - Epoch 3.0 completed in 0:43:01
-2025-05-05 22:36:55,351 - INFO - Estimated time remaining: 4:56:37
-2025-05-05 22:36:55,351 - INFO - Starting epoch 3.0/10
-2025-05-05 23:20:03,816 - INFO - Epoch 4.0 completed in 0:43:08
-2025-05-05 23:20:03,820 - INFO - Estimated time remaining: 4:15:46
-2025-05-05 23:20:03,821 - INFO - Starting epoch 4.0/10
-2025-05-06 00:01:15,004 - INFO - Epoch 5.0 completed in 0:41:11
-2025-05-06 00:01:15,012 - INFO - Estimated time remaining: 3:31:20
-2025-05-06 00:01:15,012 - INFO - Starting epoch 5.0/10
-2025-05-06 00:42:31,491 - INFO - Epoch 6.0 completed in 0:41:16
-2025-05-06 00:42:31,494 - INFO - Estimated time remaining: 2:48:16
-2025-05-06 00:42:31,625 - INFO - Training completed in 3:30:21
-2025-05-06 00:42:31,626 - INFO - Evaluating on test set...
-2025-05-06 00:44:07,985 - INFO - Test evaluation completed in 0:01:36
-2025-05-06 00:44:07,985 - INFO - Test results: {'eval_loss': 0.172576442360878, 'eval_accuracy': 0.9295, 'eval_f1_weighted': 0.9315759381075926, 'eval_f1_anger': 0.9304029304029304, 'eval_f1_fear': 0.8805620608899297, 'eval_f1_joy': 0.947129909365559, 'eval_f1_love': 0.8494623655913979, 'eval_f1_sadness': 0.9708904109589042, 'eval_f1_surprise': 0.7975460122699386, 'eval_runtime': 96.3362, 'eval_samples_per_second': 20.761, 'eval_steps_per_second': 0.654, 'epoch': 5.0}
-2025-05-06 00:44:07,985 - INFO - Saving model...
-2025-05-06 00:44:08,022 - INFO - Model saved in 0:00:00
-2025-05-06 00:44:08,022 - INFO - Training pipeline completed successfully!
+2025-05-06 10:03:17,536 - INFO - Loading Kaggle Emotion dataset...
+2025-05-06 10:03:19,505 - INFO - Processing labels...
+2025-05-06 10:03:19,572 - INFO - Dataset splits: train=70000, validation=15000, test=15000
+2025-05-06 10:03:19,573 - INFO - Analyzing label distribution...
+2025-05-06 10:03:22,586 - INFO - Label distribution:
+2025-05-06 10:03:22,586 - INFO - love: 5959 examples (8.51%)
+2025-05-06 10:03:22,586 - INFO - sadness: 20317 examples (29.02%)
+2025-05-06 10:03:22,586 - INFO - joy: 23546 examples (33.64%)
+2025-05-06 10:03:22,586 - INFO - surprise: 2513 examples (3.59%)
+2025-05-06 10:03:22,586 - INFO - fear: 8061 examples (11.52%)
+2025-05-06 10:03:22,586 - INFO - anger: 9604 examples (13.72%)
+2025-05-06 10:03:22,586 - INFO - Initializing Rahmat82/DistilBERT-finetuned-on-emotion model and tokenizer...
+2025-05-06 10:03:23,614 - INFO - Tokenizing dataset...
+2025-05-06 10:03:27,427 - INFO - Calculating class weights...
+2025-05-06 10:03:30,705 - INFO - Class weights:
+2025-05-06 10:03:30,706 - INFO - sadness: 0.5742
+2025-05-06 10:03:30,706 - INFO - joy: 0.4955
+2025-05-06 10:03:30,706 - INFO - love: 1.9578
+2025-05-06 10:03:30,706 - INFO - anger: 1.2148
+2025-05-06 10:03:30,706 - INFO - fear: 1.4473
+2025-05-06 10:03:30,706 - INFO - surprise: 4.6425
+2025-05-06 10:03:30,785 - INFO - Starting training...
+2025-05-06 10:03:30,915 - INFO - Starting epoch 1/2
+2025-05-06 11:42:55,215 - INFO - Epoch 2.0 completed in 1:39:24
+2025-05-06 11:42:55,222 - INFO - Estimated time remaining: 0:00:00
+2025-05-06 11:42:55,224 - INFO - Starting epoch 2.0/2
+2025-05-06 13:20:22,408 - INFO - Epoch 3.0 completed in 1:37:27
+2025-05-06 13:20:22,409 - INFO - Estimated time remaining: -1 day, 22:21:35
+2025-05-06 13:20:22,906 - INFO - Training completed in 3:16:52
+2025-05-06 13:20:22,906 - INFO - Evaluating on test set...
+2025-05-06 13:25:33,285 - INFO - Test evaluation completed in 0:05:10
+2025-05-06 13:25:33,285 - INFO - Test results: {'eval_loss': 0.1305728256702423, 'eval_accuracy': 0.9379333333333333, 'eval_f1_weighted': 0.939644756014179, 'eval_f1_sadness': 0.9736688121708601, 'eval_f1_joy': 0.9503459503459504, 'eval_f1_love': 0.858384643245201, 'eval_f1_anger': 0.9389895138226882, 'eval_f1_fear': 0.9069016152716594, 'eval_f1_surprise': 0.8537549407114624, 'eval_runtime': 310.3632, 'eval_samples_per_second': 48.33, 'eval_steps_per_second': 0.757, 'epoch': 2.0}
+2025-05-06 13:25:33,286 - INFO - Saving model...
+2025-05-06 13:25:33,454 - INFO - Model saved in 0:00:00
+2025-05-06 13:25:33,454 - INFO - Training pipeline completed successfully!

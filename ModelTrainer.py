@@ -3,7 +3,6 @@ import sys
 import time
 from collections import defaultdict
 from datetime import timedelta
-
 import numpy as np
 import torch
 from datasets import load_dataset
@@ -20,8 +19,8 @@ from transformers import (
 )
 from tqdm import tqdm
 
-TARGET_EMOTIONS = ['anger', 'fear', 'joy', 'love', 'sadness', 'surprise']
-MODEL_NAME = "bhadresh-savani/albert-base-v2-emotion"
+TARGET_EMOTIONS = ['sadness', 'joy', 'love', 'anger', 'fear', 'surprise']
+MODEL_NAME = "Rahmat82/DistilBERT-finetuned-on-emotion"
 
 def setup_logging():
     logging.basicConfig(
@@ -40,16 +39,42 @@ def format_time(seconds):
     return str(timedelta(seconds=int(seconds)))
 
 def load_and_preprocess_dataset():
-    logger.info("Loading mteb/emotion dataset...")
-    dataset = load_dataset("mteb/emotion")
+    logger.info("Loading Kaggle Emotion dataset...")
+    dataset = load_dataset("csv", data_files={"train": "data.csv"}, delimiter=",")
     
     def map_labels(example):
-        label_id = TARGET_EMOTIONS.index(example['label_text'])
+        label_id = int(example['label'])
         return {'text': example['text'], 'label': label_id}
     
     logger.info("Processing labels...")
     processed_dataset = dataset.map(map_labels)
-    return processed_dataset
+    
+    # Filter all splits to only include valid labels
+    processed_dataset = processed_dataset.filter(lambda x: x['label'] < len(TARGET_EMOTIONS))
+    
+    # Apply shuffle and selection only to the train split
+    train_dataset = processed_dataset["train"].shuffle(seed=42)
+    
+    # Select a subset if the dataset is too large
+    if len(train_dataset) > 100000:
+        train_dataset = train_dataset.select(range(100000))
+    
+    # Create train/validation/test splits
+    train_testvalid = train_dataset.train_test_split(test_size=0.3, seed=42)
+    test_valid = train_testvalid['test'].train_test_split(test_size=0.5, seed=42)
+    
+    # Combine into a DatasetDict
+    split_dataset = {
+        'train': train_testvalid['train'],
+        'validation': test_valid['train'],
+        'test': test_valid['test']
+    }
+    
+    logger.info(f"Dataset splits: train={len(split_dataset['train'])}, "
+                f"validation={len(split_dataset['validation'])}, "
+                f"test={len(split_dataset['test'])}")
+    
+    return split_dataset
 
 def analyze_label_distribution(dataset):
     logger.info("Analyzing label distribution...")
@@ -80,12 +105,15 @@ def tokenize_dataset(dataset, tokenizer):
     def tokenize_fn(examples):
         return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=64)
 
-    tokenized_dataset = dataset.map(
-        tokenize_fn,
-        batched=True,
-        desc="Tokenizing",
-        num_proc=4
-    )
+    tokenized_dataset = {}
+    for split in dataset:
+        tokenized_dataset[split] = dataset[split].map(
+            tokenize_fn,
+            batched=True,
+            desc=f"Tokenizing {split}",
+            num_proc=4
+        )
+    
     return tokenized_dataset
 
 def calculate_class_weights(dataset):
@@ -167,10 +195,10 @@ def compute_metrics(eval_pred):
 def setup_training_args():
     return TrainingArguments(
         output_dir="./emotion_model",
-        learning_rate=3e-5,
-        per_device_train_batch_size=32,
-        per_device_eval_batch_size=32,
-        num_train_epochs=10,
+        learning_rate=2e-5,
+        per_device_train_batch_size=64,
+        per_device_eval_batch_size=64,
+        num_train_epochs=2,
         weight_decay=0.01,
         eval_strategy="steps",
         eval_steps=250,
@@ -230,23 +258,27 @@ def save_model(model, tokenizer):
     logger.info(f"Model saved in {format_time(time.time() - save_start_time)}")
 
 def main():
-    # 1. Load and preprocess data
-    dataset = load_and_preprocess_dataset()
-    label_distribution = analyze_label_distribution(dataset)
-    
-    # 2. Initialize model and tokenizer
-    model, tokenizer = initialize_model_and_tokenizer()
-    tokenized_dataset = tokenize_dataset(dataset, tokenizer)
-    class_weights = calculate_class_weights(dataset)
-    
-    # 3. Train the model
-    trainer, train_result = train_model(model, tokenizer, tokenized_dataset, class_weights)
-    
-    # 4. Evaluate and save
-    evaluate_model(trainer, tokenized_dataset)
-    save_model(model, tokenizer)
-    
-    logger.info("Training pipeline completed successfully!")
+    try:
+        # 1. Load and preprocess data
+        dataset = load_and_preprocess_dataset()
+        label_distribution = analyze_label_distribution(dataset)
+        
+        # 2. Initialize model and tokenizer
+        model, tokenizer = initialize_model_and_tokenizer()
+        tokenized_dataset = tokenize_dataset(dataset, tokenizer)
+        class_weights = calculate_class_weights(dataset)
+        
+        # 3. Train the model
+        trainer, train_result = train_model(model, tokenizer, tokenized_dataset, class_weights)
+        
+        # 4. Evaluate and save
+        evaluate_model(trainer, tokenized_dataset)
+        save_model(model, tokenizer)
+        
+        logger.info("Training pipeline completed successfully!")
+    except Exception as e:
+        logger.error(f"Error during training: {str(e)}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     main()
